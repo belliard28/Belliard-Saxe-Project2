@@ -10,6 +10,7 @@
 #define SUCCESS_LED  GPIO_NUM_11    // success LED pin 11
 #define HEADLIGHT_LED GPIO_NUM_12   //headlight LED 1 pin 12
 #define LIGHT_SENSOR GPIO_NUM_13    //light sensor read at pin 13
+#define BUZZER GPIO_NUM_14
 
 bool dseat = false;                //Detects when the driver is seated 
 bool pseat = false;                //Detects when the passenger is seated
@@ -17,11 +18,13 @@ bool dbelt = false;                //Detects when the driver seatbelt is on
 bool pbelt = false;                //Detects when the passenger seatbelt is on
 bool ignition = false;             //Detects when the ignition is turned on
 bool lsensor = false;              //Detects light level for light auto mode 
+bool ignitionstate = false;   
+bool ignitionlight = false;
+bool bstate = false;
 int executed = 0;                  //keep track of print statements
 int ready_led = 0;                 //keep track of whether ready_led should be on or off
 int headlights = 0;                //keeps track of headlights on/off
 int dial = 0;                      //keeps track of potentiometer value for setting the headlights
-
 void app_main(void)
 {
     // set driver seat pin config to input and internal pullup
@@ -66,6 +69,9 @@ void app_main(void)
     gpio_set_direction(LIGHT_SENSOR, GPIO_MODE_INPUT);
     gpio_pullup_en(LIGHT_SENSOR);
 
+    gpio_reset_pin(BUZZER);
+    gpio_set_direction(BUZZER, GPIO_MODE_OUTPUT);
+
     while (1){
         // Task Delay to prevent watchdog
         vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -80,6 +86,7 @@ void app_main(void)
 
         // if the driver seat button is pressed
         if (dseat){
+            gpio_set_level(BUZZER, 0);
             if (executed == 0){
                 printf("Welcome to enhanced alarm system model 218-W25 \n"); 
                 executed = 1;
@@ -89,20 +96,21 @@ void app_main(void)
         // if all of the conditions are met
         if (dseat && pseat && dbelt && pbelt){
             //set ready led to ON
+            
             if (ready_led == 0){
                 gpio_set_level(READY_LED, 1);
                 ready_led = 1;
             }
             // if ignition button is pressed while all conditions are met
-            if (ignition == true){
-                // turn on ignition LED and turn off ready LED
-                gpio_set_level(SUCCESS_LED, 1);
-                gpio_set_level(READY_LED, 0);
-                // print engine started message
-                printf("Engine started!\n");
+            if (ignition && !bstate){
+                    // turn on ignition LED and turn off ready LED
+                    gpio_set_level(READY_LED, 0);
+                    // print engine started message
+                    bstate = true;
+                }
                 //reads potentiometer and sets headlights accoridngly
                 //if dial is at 0V, turn off headlights
-                if (dial == 0){
+                /* if (dial == 0){
                     gpio_set_level(HEADLIGHT_LED, headlights);
                 }
                 else if (dial == ){
@@ -118,8 +126,17 @@ void app_main(void)
                         headlights = 0;
                         gpio_set_level(HEADLIGHT_LED, headlights);
                     }
-                }
+                } */
+            if (!ignition && bstate){
+                ignitionlight = !ignitionlight;
+                gpio_set_level(SUCCESS_LED, 0);
+                printf("Engine exstinguished.\n");
             }
+            if (ignitionlight){
+                gpio_set_level(SUCCESS_LED, 1);
+                printf("Engine started!\n");
+                }
+            vTaskDelay(100/ portTICK_PERIOD_MS);
         }
             
         // otherwise (at least one condition is not satisfied)
@@ -128,10 +145,12 @@ void app_main(void)
             gpio_set_level(READY_LED,0);
             ready_led = 0;
             // if ignition button is pressed while conditions are not satisfied
-            if (ignition==true && executed == ){
+            if (ignition==true && executed == 1){
                     // check which conditions are not met, print corresponding message, and reset the executed variable
                     // to have another chance at starting the engine.
-                    executed == 0;
+                    gpio_set_level(BUZZER, 1);
+                    printf("Ignition inhibited.\n");
+                    executed = 0;
                     if (!pseat){
                         printf("Passenger seat not occupied.\n");
                     }
@@ -144,8 +163,7 @@ void app_main(void)
                     if (!dbelt){
                         printf("Drivers seatbelt not fastened.\n");
                     }
+                }
             }
-        }
     }
 }
-
