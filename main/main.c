@@ -11,6 +11,7 @@
 #define HEADLIGHT_LED GPIO_NUM_12   //headlight LED 1 pin 12
 #define LIGHT_SENSOR GPIO_NUM_13    //light sensor read at pin 13
 #define BUZZER GPIO_NUM_14
+#define DIAL GPIO_NUM_15 
 
 bool dseat = false;                //Detects when the driver is seated 
 bool pseat = false;                //Detects when the passenger is seated
@@ -25,6 +26,8 @@ int executed = 0;                  //keep track of print statements
 int ready_led = 0;                 //keep track of whether ready_led should be on or off
 int headlights = 0;                //keeps track of headlights on/off
 int dial = 0;                      //keeps track of potentiometer value for setting the headlights
+int engineon = 0;
+int engineoff = 1;
 void app_main(void)
 {
     // set driver seat pin config to input and internal pullup
@@ -72,6 +75,8 @@ void app_main(void)
     gpio_reset_pin(BUZZER);
     gpio_set_direction(BUZZER, GPIO_MODE_OUTPUT);
 
+    
+
     while (1){
         // Task Delay to prevent watchdog
         vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -110,7 +115,7 @@ void app_main(void)
                 }
                 //reads potentiometer and sets headlights accoridngly
                 //if dial is at 0V, turn off headlights
-                /* if (dial == 0){
+                if (dial == 0){
                     gpio_set_level(HEADLIGHT_LED, headlights);
                 }
                 else if (dial == ){
@@ -126,16 +131,21 @@ void app_main(void)
                         headlights = 0;
                         gpio_set_level(HEADLIGHT_LED, headlights);
                     }
-                } */
+                }
             if (!ignition && bstate){
                 ignitionlight = !ignitionlight;
-                gpio_set_level(SUCCESS_LED, 0);
-                printf("Engine exstinguished.\n");
+                bstate = false;
             }
-            if (ignitionlight){
+            if (ignitionlight && engineon==0){
                 gpio_set_level(SUCCESS_LED, 1);
                 printf("Engine started!\n");
-                }
+                engineon=1;
+            }
+            else if (ignitionlight && engineoff==1){
+                gpio_set_level(SUCCESS_LED, 0);
+                printf("Engine exstinguished.\n");
+                engineoff=0;
+            }
             vTaskDelay(100/ portTICK_PERIOD_MS);
         }
             
