@@ -1,5 +1,6 @@
 #include "freertos/FreeRTOS.h"
 #include "driver/gpio.h"
+#include "esp_adc/adc_oneshot.h"
 
 #define DSEAT_PIN  GPIO_NUM_5       // driver seat button pin 5
 #define PSEAT_PIN  GPIO_NUM_4       // passenger seat button pin 4
@@ -12,6 +13,11 @@
 #define LIGHT_SENSOR GPIO_NUM_13    //light sensor read at pin 13
 #define BUZZER GPIO_NUM_14
 #define DIAL GPIO_NUM_15 
+#define DIAL_CHANNEL     ADC_CHANNEL_5
+#define SENSOR_CHANNEL   ADC_CHANNEL_2
+#define ADC_ATTEN       ADC_ATTEN_DB_12
+#define BITWIDTH        ADC_BITWIDTH_12
+#define DELAY_MS        10     
 
 bool dseat = false;                //Detects when the driver is seated 
 bool pseat = false;                //Detects when the passenger is seated
@@ -25,9 +31,13 @@ bool bstate = false;
 int executed = 0;                  //keep track of print statements
 int ready_led = 0;                 //keep track of whether ready_led should be on or off
 int headlights = 0;                //keeps track of headlights on/off
-int dial = 0;                      //keeps track of potentiometer value for setting the headlights
 int engineon = 0;
 int engineoff = 1;
+int dial_bits;                        // dial reading (bits)
+int dial_adc_mV;                          // dial reading (mV)
+int sensor_bits;                        // light reading (bits)
+int sensor_adc_mV;                          // light reading (mV)
+
 void app_main(void)
 {
     // set driver seat pin config to input and internal pullup
@@ -75,7 +85,7 @@ void app_main(void)
     gpio_reset_pin(BUZZER);
     gpio_set_direction(BUZZER, GPIO_MODE_OUTPUT);
 
-    
+
 
     while (1){
         // Task Delay to prevent watchdog
@@ -88,6 +98,40 @@ void app_main(void)
         pbelt = gpio_get_level(PBELT_PIN)==0;
         ignition = gpio_get_level(IGNITION_BUTTON)==0;
         lsensor = gpio_get_level(LIGHT_SENSOR)==1;
+
+        adc_oneshot_unit_init_cfg_t init_config2 = {
+        .unit_id = ADC_UNIT_2,
+        };                                                  // Unit configuration
+        adc_oneshot_unit_handle_t adc2_handle;              // Unit handle
+        adc_oneshot_new_unit(&init_config2, &adc2_handle);  // Populate unit handle
+    
+        adc_oneshot_chan_cfg_t config = {
+            .atten = ADC_ATTEN,
+            .bitwidth = BITWIDTH
+        };                                                  // Channel config
+        adc_oneshot_config_channel                          // Configure the chan
+        (adc2_handle, DIAL_CHANNEL, &config);
+    
+        adc_cali_curve_fitting_config_t cali_config = {
+            .unit_id = ADC_UNIT_2,
+            .chan = DIAL_CHANNEL,
+            .atten = ADC_ATTEN,
+            .bitwidth = BITWIDTH
+        };
+        
+        adc_oneshot_config_channel                          // Configure the chan
+        (adc2_handle, SENSOR_CHANNEL, &config);
+    
+        adc_cali_curve_fitting_config_t cali_config = {
+            .unit_id = ADC_UNIT_2,
+            .chan = DIAL_CHANNEL,
+            .atten = ADC_ATTEN,
+            .bitwidth = BITWIDTH // Calibration config
+        };
+        adc_cali_handle_t adc1_cali_chan_handle;            // Calibration handle
+        adc_cali_create_scheme_curve_fitting                // Populate cal handle
+        (&cali_config, &adc1_cali_chan_handle);
+
 
         // if the driver seat button is pressed
         if (dseat){
@@ -115,10 +159,21 @@ void app_main(void)
                 }
                 //reads potentiometer and sets headlights accoridngly
                 //if dial is at 0V, turn off headlights
-                if (dial == 0){
+                adc_oneshot_read
+                (adc2_handle, DIAL_CHANNEL, &dial_bits);              // Read ADC bits
+                adc_cali_raw_to_voltage
+                (adc1_cali_chan_handle, dial_bits, &dial_adc_mV);         // Convert to mV
+
+                adc_oneshot_read
+                (adc2_handle,SENSOR_CHANNEL, &sensor_bits);              // Read ADC bits
+                adc_cali_raw_to_voltage
+                (adc1_cali_chan_handle, sensor_bits, &sensor_adc_mV);         // Convert to mV
+
+                
+                if (dial_adc_mV == 0){
                     gpio_set_level(HEADLIGHT_LED, headlights);
                 }
-                else if (dial == ){
+                else if (dial_adc_mV> 3000){
                     headlights = 1;
                     gpio_set_level(HEADLIGHT_LED, headlights);
                 }
