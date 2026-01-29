@@ -11,8 +11,8 @@
 #define SUCCESS_LED  GPIO_NUM_11    // success LED pin 11
 #define HEADLIGHT_LED GPIO_NUM_12   //headlight LED 1 pin 12
 #define LIGHT_SENSOR GPIO_NUM_13    //light sensor read at pin 13
-#define BUZZER GPIO_NUM_14
-#define DIAL GPIO_NUM_15 
+#define BUZZER GPIO_NUM_14          //buzzer in gpio pin 14
+#define DIAL GPIO_NUM_15            //dial in gpio pin 15
 #define DIAL_CHANNEL     ADC_CHANNEL_5
 #define SENSOR_CHANNEL   ADC_CHANNEL_2
 #define ADC_ATTEN       ADC_ATTEN_DB_12
@@ -82,6 +82,7 @@ void app_main(void)
     gpio_set_direction(LIGHT_SENSOR, GPIO_MODE_INPUT);
     gpio_pullup_en(LIGHT_SENSOR);
 
+    //sets buzzer to output, level 0
     gpio_reset_pin(BUZZER);
     gpio_set_direction(BUZZER, GPIO_MODE_OUTPUT);
 
@@ -97,21 +98,24 @@ void app_main(void)
         dbelt = gpio_get_level(DBELT_PIN)==0;
         pbelt = gpio_get_level(PBELT_PIN)==0;
         ignition = gpio_get_level(IGNITION_BUTTON)==0;
-        lsensor = gpio_get_level(LIGHT_SENSOR)==1;
+        lsensor = gpio_get_level(LIGHT_SENSOR)==1;     //only true when detecting light 
 
-        adc_oneshot_unit_init_cfg_t init_config2 = {
-        .unit_id = ADC_UNIT_2,
-        };                                                  // Unit configuration
+        
+                                                        // Unit configuration
         adc_oneshot_unit_handle_t adc2_handle;              // Unit handle
+        
+        adc_oneshot_unit_init_cfg_t init_config2 = {
+            .unit_id = ADC_UNIT_2, 
+        };
         adc_oneshot_new_unit(&init_config2, &adc2_handle);  // Populate unit handle
-    
+         
         adc_oneshot_chan_cfg_t config = {
             .atten = ADC_ATTEN,
             .bitwidth = BITWIDTH
         };                                                  // Channel config
-        adc_oneshot_config_channel                          // Configure the chan
-        (adc2_handle, DIAL_CHANNEL, &config);
-    
+        adc_oneshot_config_channel(adc2_handle, DIAL_CHANNEL, &config);
+        adc_oneshot_config_channel(adc2_handle, SENSOR_CHANNEL, &config);
+
         adc_cali_curve_fitting_config_t cali_config = {
             .unit_id = ADC_UNIT_2,
             .chan = DIAL_CHANNEL,
@@ -119,20 +123,18 @@ void app_main(void)
             .bitwidth = BITWIDTH
         };
         
-        adc_oneshot_config_channel                          // Configure the chan
-        (adc2_handle, SENSOR_CHANNEL, &config);
-    
-        adc_cali_curve_fitting_config_t cali_config = {
-            .unit_id = ADC_UNIT_2,
-            .chan = DIAL_CHANNEL,
-            .atten = ADC_ATTEN,
-            .bitwidth = BITWIDTH // Calibration config
-        };
-        adc_cali_handle_t adc1_cali_chan_handle;            // Calibration handle
-        adc_cali_create_scheme_curve_fitting                // Populate cal handle
-        (&cali_config, &adc1_cali_chan_handle);
+        adc_cali_handle_t adc1_cali_chan_handle = NULL;            // Calibration handle
+        adc_cali_create_scheme_curve_fitting(&cali_config, &adc1_cali_chan_handle);
+        cali_config.chan = SENSOR_CHANNEL;
 
+        adc_cali_handle_t adc2_cali_chan_handle = NULL;            // Calibration handle
+        adc_cali_create_scheme_curve_fitting(&cali_config, &adc2_cali_chan_handle);
 
+        adc_oneshot_read(adc2_handle, DIAL_CHANNEL, &dial_bits);
+        adc_cali_raw_to_voltage(adc1_cali_chan_handle, dial_bits, &dial_adc_mV);
+
+        adc_oneshot_read(adc2_handle, SENSOR_CHANNEL, &sensor_bits);
+        adc_cali_raw_to_voltage(adc2_cali_chan_handle, sensor_bits, &sensor_adc_mV);
         // if the driver seat button is pressed
         if (dseat){
             gpio_set_level(BUZZER, 0);
@@ -161,11 +163,13 @@ void app_main(void)
                 //if dial is at 0V, turn off headlights
                 adc_oneshot_read
                 (adc2_handle, DIAL_CHANNEL, &dial_bits);              // Read ADC bits
+                
                 adc_cali_raw_to_voltage
                 (adc1_cali_chan_handle, dial_bits, &dial_adc_mV);         // Convert to mV
 
                 adc_oneshot_read
                 (adc2_handle,SENSOR_CHANNEL, &sensor_bits);              // Read ADC bits
+                
                 adc_cali_raw_to_voltage
                 (adc1_cali_chan_handle, sensor_bits, &sensor_adc_mV);         // Convert to mV
 
@@ -191,15 +195,13 @@ void app_main(void)
                 ignitionlight = !ignitionlight;
                 bstate = false;
             }
-            if (ignitionlight && engineon==0){
+            if (ignitionlight){
                 gpio_set_level(SUCCESS_LED, 1);
                 printf("Engine started!\n");
-                engineon=1;
             }
-            else if (ignitionlight && engineoff==1){
+            else if (ignitionlight ){
                 gpio_set_level(SUCCESS_LED, 0);
                 printf("Engine exstinguished.\n");
-                engineoff=0;
             }
             vTaskDelay(100/ portTICK_PERIOD_MS);
         }
